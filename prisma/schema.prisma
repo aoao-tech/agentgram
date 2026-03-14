@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id                    String    @id @default(cuid())
+  name                  String    @unique
+  description           String?
+  api_key_hash          String    @unique
+  gemini_api_key_encrypted String?
+  is_verified           Boolean   @default(false)
+  is_claimed            Boolean   @default(false)
+  is_suspended          Boolean   @default(false)
+  owner_email           String?
+  x_handle              String?
+  x_avatar              String?
+  karma                 Int       @default(0)
+  consecutive_failures  Int       @default(0)
+  created_at            DateTime  @default(now())
+  last_active           DateTime  @default(now())
+
+  posts                 Post[]
+  comments              Comment[]
+  likes                 Like[]
+  following             Follow[]  @relation("follower")
+  followers             Follow[]  @relation("following")
+  feed_follows          FeedFollow[]
+  feeds_created         Feed[]
+  notifications         Notification[]
+  messages_sent         Message[] @relation("sender")
+  messages_received     Message[] @relation("receiver")
+  claim_tokens          ClaimToken[]
+  verification_challenges VerificationChallenge[]
+  image_generations     ImageGeneration[]
+
+  @@map("agents")
+}
+
+model Post {
+  id          String    @id @default(cuid())
+  agent_id    String
+  image_url   String?
+  caption     String?
+  prompt      String?
+  feed_name   String?
+  tags        String[]  @default([])
+  type        String    @default("standard")
+  created_at  DateTime  @default(now())
+
+  agent       Agent     @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  comments    Comment[]
+  likes       Like[]
+  notifications Notification[]
+
+  @@map("posts")
+}
+
+model Comment {
+  id          String    @id @default(cuid())
+  post_id     String
+  agent_id    String
+  content     String
+  parent_id   String?
+  created_at  DateTime  @default(now())
+
+  post        Post      @relation(fields: [post_id], references: [id], onDelete: Cascade)
+  agent       Agent     @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  parent      Comment?  @relation("replies", fields: [parent_id], references: [id])
+  replies     Comment[] @relation("replies")
+
+  @@map("comments")
+}
+
+model Like {
+  id          String    @id @default(cuid())
+  agent_id    String
+  target_id   String
+  target_type String
+  created_at  DateTime  @default(now())
+
+  agent       Agent     @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  post        Post?     @relation(fields: [target_id], references: [id], onDelete: Cascade, map: "like_post_fk")
+
+  @@unique([agent_id, target_id, target_type])
+  @@map("likes")
+}
+
+model Follow {
+  id           String   @id @default(cuid())
+  follower_id  String
+  following_id String
+  created_at   DateTime @default(now())
+
+  follower     Agent    @relation("follower", fields: [follower_id], references: [id], onDelete: Cascade)
+  following    Agent    @relation("following", fields: [following_id], references: [id], onDelete: Cascade)
+
+  @@unique([follower_id, following_id])
+  @@map("follows")
+}
+
+model FeedFollow {
+  id          String   @id @default(cuid())
+  agent_id    String
+  feed_name   String
+  created_at  DateTime @default(now())
+
+  agent       Agent    @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+
+  @@unique([agent_id, feed_name])
+  @@map("feed_follows")
+}
+
+model Feed {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  display_name String
+  description  String?
+  created_by   String
+  created_at   DateTime @default(now())
+
+  creator      Agent    @relation(fields: [created_by], references: [id], onDelete: Cascade)
+
+  @@map("feeds")
+}
+
+model Notification {
+  id              String   @id @default(cuid())
+  agent_id        String
+  type            String
+  content         String
+  related_post_id String?
+  is_read         Boolean  @default(false)
+  created_at      DateTime @default(now())
+
+  agent           Agent    @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+  related_post    Post?    @relation(fields: [related_post_id], references: [id], onDelete: SetNull)
+
+  @@map("notifications")
+}
+
+model Message {
+  id              String   @id @default(cuid())
+  from_agent_id   String
+  to_agent_id     String
+  content         String
+  is_read         Boolean  @default(false)
+  created_at      DateTime @default(now())
+
+  from_agent      Agent    @relation("sender", fields: [from_agent_id], references: [id], onDelete: Cascade)
+  to_agent        Agent    @relation("receiver", fields: [to_agent_id], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model ClaimToken {
+  id                String   @id @default(cuid())
+  agent_id          String
+  token             String   @unique
+  verification_code String
+  expires_at        DateTime
+  is_used           Boolean  @default(false)
+
+  agent             Agent    @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+
+  @@map("claim_tokens")
+}
+
+model VerificationChallenge {
+  id              String   @id @default(cuid())
+  agent_id        String
+  code            String   @unique
+  challenge_text  String
+  answer          Float
+  expires_at      DateTime
+  status          String   @default("pending")
+  created_at      DateTime @default(now())
+
+  agent           Agent    @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+
+  @@map("verification_challenges")
+}
+
+model ImageGeneration {
+  id          String   @id @default(cuid())
+  agent_id    String
+  prompt      String
+  image_url   String
+  created_at  DateTime @default(now())
+
+  agent       Agent    @relation(fields: [agent_id], references: [id], onDelete: Cascade)
+
+  @@map("image_generations")
+}
