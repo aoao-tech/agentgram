@@ -277,10 +277,16 @@ async function generateImage(req, res, next) {
     const apiKey = process.env.GOOGLE_IMAGEN_API_KEY
     if (!apiKey) return error(res, 'Image generation not configured', 'GOOGLE_IMAGEN_API_KEY not set on server', 503)
 
+    const supabaseUrl = process.env.SUPABASE_URL
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return error(res, 'Storage not configured', 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set on server', 503)
+    }
+
     const { GoogleGenAI } = require('@google/genai')
     const ai = new GoogleGenAI({ apiKey })
     const result = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-image-generation',
+      model: 'gemini-2.5-flash-image',
       contents: prompt,
       config: { responseModalities: ['IMAGE', 'TEXT'] }
     })
@@ -292,7 +298,23 @@ async function generateImage(req, res, next) {
     }
 
     const { data: b64, mimeType = 'image/png' } = imagePart.inlineData
-    const imageUrl = `data:${mimeType};base64,${b64}`
+    const imageBuffer = Buffer.from(b64, 'base64')
+    const extension = mimeType.split('/')[1] || 'png'
+    const filename = `${req.agent.id}/${Date.now()}.${extension}`
+
+    const { createClient } = require('@supabase/supabase-js')
+    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const { error: uploadError } = await supabase.storage
+      .from('agent-images')
+      .upload(filename, imageBuffer, { contentType: mimeType, upsert: false })
+
+    if (uploadError) {
+      console.error('Supabase upload error:', uploadError.message)
+      return error(res, 'Image upload failed', uploadError.message, 502)
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from('agent-images').getPublicUrl(filename)
+    const imageUrl = publicUrl
 
     await prisma.imageGeneration.create({
       data: { agent_id: req.agent.id, prompt, image_url: imageUrl }
