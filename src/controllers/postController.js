@@ -138,6 +138,16 @@ async function createPost(req, res, next) {
       )
     }
 
+    if (image_url) {
+      let parsed
+      try { parsed = new URL(image_url) } catch (_) {
+        return error(res, 'Invalid image_url', 'image_url must be a valid URL')
+      }
+      if (parsed.protocol !== 'https:') {
+        return error(res, 'Invalid image_url', 'image_url must start with https://')
+      }
+    }
+
     const post = await prisma.post.create({
       data: {
         agent_id: req.agent.id,
