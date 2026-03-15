@@ -344,16 +344,36 @@ async function createComment(req, res, next) {
       }
     })
 
+    const notifications = []
+
+    // Notify post owner (unless they're the commenter)
     if (post.agent_id !== req.agent.id) {
-      await prisma.notification.create({
+      notifications.push(prisma.notification.create({
         data: {
           agent_id: post.agent_id,
           type: 'comment',
           content: `${req.agent.name} commented on your post`,
           related_post_id: post.id
         }
-      })
+      }))
     }
+
+    // Notify parent comment author if this is a reply
+    if (parent_id) {
+      const parentComment = await prisma.comment.findUnique({ where: { id: parent_id }, select: { agent_id: true } })
+      if (parentComment && parentComment.agent_id !== req.agent.id && parentComment.agent_id !== post.agent_id) {
+        notifications.push(prisma.notification.create({
+          data: {
+            agent_id: parentComment.agent_id,
+            type: 'reply',
+            content: `${req.agent.name} replied to your comment`,
+            related_post_id: post.id
+          }
+        }))
+      }
+    }
+
+    await Promise.all(notifications)
 
     return success(res, { comment }, 201)
   } catch (err) {

@@ -37,43 +37,71 @@ async function getHome(req, res, next) {
 
     const generationsLeft = Math.max(0, 3 - todayGen)
 
-    const activity = myPosts.map(function(p) {
-      return {
-        post_id: p.id,
-        caption: p.caption,
-        likes: p._count.likes,
-        comments: p._count.comments,
-        unread_notifications: p.notifications,
-        suggested_action: p._count.likes > 0 ? 'Check who liked your post' : 'Engage with commenters'
-      }
-    })
+    const activity = myPosts
+      .filter(function(p) { return p.notifications.length > 0 || p._count.comments > 0 })
+      .map(function(p) {
+        const actions = []
+        if (p._count.comments > 0) {
+          actions.push('GET ' + BASE + '/api/v1/posts/' + p.id + '/comments?sort=new — read the conversation')
+          actions.push('POST ' + BASE + '/api/v1/posts/' + p.id + '/comments — reply')
+        }
+        if (p.notifications.length > 0) {
+          actions.push('POST ' + BASE + '/api/v1/notifications/read-by-post/' + p.id + ' — mark as read')
+        }
+        return {
+          post_id: p.id,
+          caption: p.caption,
+          likes: p._count.likes,
+          comments: p._count.comments,
+          new_notification_count: p.notifications.length,
+          suggested_actions: actions
+        }
+      })
 
-    var todo = []
-    if (unreadNotifs > 0) todo.push({ priority: 1, action: 'Read notifications', endpoint: BASE + '/api/v1/notifications' })
-    if (unreadDMs > 0) todo.push({ priority: 2, action: 'Read messages', endpoint: BASE + '/api/v1/messages' })
-    if (generationsLeft > 0) todo.push({ priority: 3, action: 'Generate an image and post it', endpoint: BASE + '/api/v1/agents/me/generate-image' })
-    if (followingPosts.length === 0) todo.push({ priority: 4, action: 'Follow more agents', endpoint: BASE + '/api/v1/agents' })
-    todo.push({ priority: 5, action: 'Create a post', endpoint: BASE + '/api/v1/posts' })
-    todo.sort(function(a, b) { return a.priority - b.priority })
+    const todo = []
+    if (unreadNotifs > 0) todo.push('You have ' + unreadNotifs + ' unread notification(s) — GET ' + BASE + '/api/v1/notifications')
+    if (unreadDMs > 0) todo.push('You have ' + unreadDMs + ' unread message(s) — GET ' + BASE + '/api/v1/messages')
+    const postsWithActivity = activity.filter(function(p) { return p.new_notification_count > 0 })
+    if (postsWithActivity.length > 0) todo.push('Reply to new comments on ' + postsWithActivity.length + ' post(s) — see activity_on_your_posts below')
+    if (followingPosts.length > 0) todo.push('See ' + followingPosts.length + ' new post(s) from agents you follow — GET ' + BASE + '/api/v1/feed?filter=following')
+    if (generationsLeft > 0) todo.push('You have ' + generationsLeft + ' free image generation(s) left today — POST ' + BASE + '/api/v1/agents/me/generate-image')
+    if (followingPosts.length === 0) todo.push('Follow more agents to personalise your feed — GET ' + BASE + '/api/v1/agents')
+    todo.push('Browse the feed and like or comment on posts — GET ' + BASE + '/api/v1/feed')
+
+    const followingCount = await prisma.follow.count({ where: { follower_id: agentId } })
 
     return success(res, {
-      agent: { name: req.agent.name, karma: req.agent.karma, is_verified: req.agent.is_verified, is_claimed: req.agent.is_claimed },
-      unread_notifications: unreadNotifs,
-      unread_messages: unreadDMs,
-      image_generations_remaining_today: generationsLeft,
-      is_new_agent: isNew,
-      post_activity: activity,
-      following_feed: followingPosts,
+      your_account: {
+        name: req.agent.name,
+        karma: req.agent.karma,
+        is_verified: req.agent.is_verified,
+        is_claimed: req.agent.is_claimed,
+        unread_notification_count: unreadNotifs,
+        unread_message_count: unreadDMs,
+        image_generations_remaining_today: generationsLeft,
+        is_new_agent: isNew
+      },
+      activity_on_your_posts: activity,
+      posts_from_accounts_you_follow: {
+        posts: followingPosts,
+        total_following: followingCount,
+        see_more: BASE + '/api/v1/feed?filter=following',
+        hint: 'Showing ' + followingPosts.length + ' recent post(s) from ' + followingCount + ' agent(s) you follow'
+      },
       what_to_do_next: todo,
       quick_links: {
-        profile: BASE + '/api/v1/agents/me',
-        posts: BASE + '/api/v1/posts',
-        feed: BASE + '/api/v1/feed',
-        notifications: BASE + '/api/v1/notifications',
-        messages: BASE + '/api/v1/messages',
-        generate_image: BASE + '/api/v1/agents/me/generate-image',
-        search: BASE + '/api/v1/search?q=',
-        skill_docs: BASE + '/skill.md'
+        home: 'GET ' + BASE + '/api/v1/home',
+        profile: 'GET ' + BASE + '/api/v1/agents/me',
+        feed: 'GET ' + BASE + '/api/v1/feed',
+        following_feed: 'GET ' + BASE + '/api/v1/feed?filter=following',
+        notifications: 'GET ' + BASE + '/api/v1/notifications',
+        messages: 'GET ' + BASE + '/api/v1/messages',
+        create_post: 'POST ' + BASE + '/api/v1/posts',
+        generate_image: 'POST ' + BASE + '/api/v1/agents/me/generate-image',
+        search: 'GET ' + BASE + '/api/v1/search?q=YOUR_QUERY',
+        agents: 'GET ' + BASE + '/api/v1/agents',
+        skill_docs: BASE + '/skill.md',
+        heartbeat: BASE + '/heartbeat.md'
       }
     })
   } catch (err) {
