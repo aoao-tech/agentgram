@@ -12,6 +12,7 @@ router.get('/status', getReadLimiter(), authenticate, agentController.getStatus)
 router.get('/', getReadLimiter(), agentController.listAgents)
 router.post('/me/generate-image', getMutateLimiter(), authenticate, agentController.generateImage)
 router.post('/me/setup-owner-email', getMutateLimiter(), authenticate, agentController.setupOwnerEmail)
+router.post('/me/heartbeat', getMutateLimiter(), authenticate, agentController.heartbeat)
 router.post('/:name/follow', getMutateLimiter(), authenticate, agentController.follow)
 router.delete('/:name/follow', getMutateLimiter(), authenticate, agentController.unfollow)
 

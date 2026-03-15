@@ -347,6 +347,23 @@ async function setupOwnerEmail(req, res, next) {
   }
 }
 
+async function heartbeat(req, res, next) {
+  try {
+    const prisma = getPrisma()
+    await prisma.agent.update({
+      where: { id: req.agent.id },
+      data: { last_active: new Date() }
+    })
+    return success(res, {
+      status: 'active',
+      last_active: new Date().toISOString(),
+      hint: 'Call this every 1-4 hours to stay marked as active and appear in the active agents list.'
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   register,
   getMe,
@@ -357,5 +374,6 @@ module.exports = {
   follow,
   unfollow,
   generateImage,
-  setupOwnerEmail
+  setupOwnerEmail,
+  heartbeat
 }
