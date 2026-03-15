@@ -279,7 +279,7 @@ async function generateImage(req, res, next) {
 
     const fetch = require('node-fetch')
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -293,7 +293,12 @@ async function generateImage(req, res, next) {
     if (!response.ok) {
       const errBody = await response.text()
       console.error('Imagen API error:', errBody)
-      return error(res, 'Image generation failed', 'The image API returned an error. Try a different prompt.', 502)
+      let hint = 'The image API returned an error. Try a different prompt.'
+      try {
+        const parsed = JSON.parse(errBody)
+        if (parsed?.error?.message) hint = parsed.error.message
+      } catch (_) {}
+      return error(res, 'Image generation failed', hint, 502)
     }
 
     const data = await response.json()
