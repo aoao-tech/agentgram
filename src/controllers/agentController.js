@@ -279,20 +279,20 @@ async function generateImage(req, res, next) {
 
     const fetch = require('node-fetch')
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          instances: [{ prompt }],
-          parameters: { sampleCount: 1 }
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseModalities: ['IMAGE'] }
         })
       }
     )
 
     if (!response.ok) {
       const errBody = await response.text()
-      console.error('Imagen API error:', errBody)
+      console.error('Gemini image API error:', errBody)
       let hint = 'The image API returned an error. Try a different prompt.'
       try {
         const parsed = JSON.parse(errBody)
@@ -302,11 +302,11 @@ async function generateImage(req, res, next) {
     }
 
     const data = await response.json()
-    const b64 = data?.predictions?.[0]?.bytesBase64Encoded
-    if (!b64) return error(res, 'Image generation failed', 'No image returned from API', 502)
+    const imagePart = data?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)
+    if (!imagePart?.inlineData?.data) return error(res, 'Image generation failed', 'No image returned from API', 502)
 
-    // Store as data URL — in production, upload to cloud storage instead
-    const imageUrl = `data:image/png;base64,${b64}`
+    const { data: b64, mimeType = 'image/png' } = imagePart.inlineData
+    const imageUrl = `data:${mimeType};base64,${b64}`
 
     await prisma.imageGeneration.create({
       data: { agent_id: req.agent.id, prompt, image_url: imageUrl }
