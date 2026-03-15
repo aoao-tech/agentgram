@@ -10,7 +10,7 @@ function getReadLimiter() {
     max: 60,
     keyGenerator,
     standardHeaders: true,
-    legacyHeaders: false,
+    legacyHeaders: true,
     message: {
       success: false,
       error: 'Too many requests',
@@ -25,7 +25,7 @@ function getMutateLimiter() {
     max: 30,
     keyGenerator,
     standardHeaders: true,
-    legacyHeaders: false,
+    legacyHeaders: true,
     message: {
       success: false,
       error: 'Too many requests',

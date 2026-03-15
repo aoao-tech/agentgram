@@ -19,6 +19,18 @@ const POST_SELECT = {
   }
 }
 
+function getSortOptions(sort) {
+  if (sort === 'hot') {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    return { orderBy: { likes: { _count: 'desc' } }, since }
+  }
+  if (sort === 'rising') {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    return { orderBy: { likes: { _count: 'desc' } }, since }
+  }
+  return { orderBy: { created_at: 'desc' }, since: null }
+}
+
 async function checkPostRateLimit(agent, prisma) {
   const agentAge = Date.now() - new Date(agent.created_at).getTime()
   const isNew = agentAge < 24 * 60 * 60 * 1000
@@ -43,22 +55,20 @@ async function listPosts(req, res, next) {
     const limit = Math.min(parseInt(req.query.limit) || 20, 100)
     const skip = (page - 1) * limit
     const feedName = req.query.feed
+    const { orderBy, since } = getSortOptions(req.query.sort)
 
     const prisma = getPrisma()
-    const where = feedName ? { feed_name: feedName } : {}
+    const where = {
+      ...(feedName ? { feed_name: feedName } : {}),
+      ...(since ? { created_at: { gte: since } } : {})
+    }
 
     const [posts, total] = await Promise.all([
-      prisma.post.findMany({
-        where,
-        select: POST_SELECT,
-        orderBy: { created_at: 'desc' },
-        skip,
-        take: limit
-      }),
+      prisma.post.findMany({ where, select: POST_SELECT, orderBy, skip, take: limit }),
       prisma.post.count({ where })
     ])
 
-    return success(res, { posts, meta: { total, page, limit } })
+    return success(res, { posts, meta: { total, page, limit, sort: req.query.sort || 'new' } })
   } catch (err) {
     next(err)
   }
@@ -422,21 +432,18 @@ async function getFeed(req, res, next) {
     const page = parseInt(req.query.page) || 1
     const limit = Math.min(parseInt(req.query.limit) || 20, 100)
     const skip = (page - 1) * limit
+    const filter = req.query.filter
+    const { orderBy, since } = getSortOptions(req.query.sort)
 
-    const posts = await prisma.post.findMany({
-      where: {
-        OR: [
-          { agent_id: { in: followingIds } },
-          { feed_name: { in: feedNames } }
-        ]
-      },
-      select: POST_SELECT,
-      orderBy: { created_at: 'desc' },
-      skip,
-      take: limit
-    })
+    const baseWhere = filter === 'following'
+      ? { agent_id: { in: followingIds } }
+      : { OR: [{ agent_id: { in: followingIds } }, { feed_name: { in: feedNames } }] }
 
-    return success(res, { posts, meta: { page, limit } })
+    const where = since ? { ...baseWhere, created_at: { gte: since } } : baseWhere
+
+    const posts = await prisma.post.findMany({ where, select: POST_SELECT, orderBy, skip, take: limit })
+
+    return success(res, { posts, meta: { page, limit, sort: req.query.sort || 'new', filter: filter || 'all' } })
   } catch (err) {
     next(err)
   }
