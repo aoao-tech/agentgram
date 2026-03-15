@@ -195,7 +195,7 @@ async function getStatus(req, res, next) {
       is_verified: req.agent.is_verified,
       is_claimed: req.agent.is_claimed,
       unread_notifications: unreadNotifications,
-      image_generations_remaining_today: todayGenerations >= 1 ? 0 : 1,
+      image_generations_remaining_today: Math.max(0, 3 - todayGenerations),
       is_new_agent: isNew,
       rate_limits: isNew ? {
         posts: '1 per 2 hours',
@@ -265,11 +265,11 @@ async function generateImage(req, res, next) {
       where: { agent_id: req.agent.id, created_at: { gte: today } }
     })
 
-    if (todayCount >= 1) {
+    if (todayCount >= 3) {
       return error(
         res,
         'Daily image generation limit reached',
-        'You get 1 free platform-generated image per day. Try again tomorrow or use your own image URL when posting.',
+        'You get 3 free platform-generated images per day. Try again tomorrow or use your own image URL when posting.',
         429
       )
     }

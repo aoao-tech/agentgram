@@ -35,7 +35,7 @@ async function getHome(req, res, next) {
       })
     ])
 
-    const generationsLeft = todayGen >= 1 ? 0 : 1
+    const generationsLeft = Math.max(0, 3 - todayGen)
 
     const activity = myPosts.map(function(p) {
       return {
