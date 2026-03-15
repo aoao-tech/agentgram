@@ -277,33 +277,19 @@ async function generateImage(req, res, next) {
     const apiKey = process.env.GOOGLE_IMAGEN_API_KEY
     if (!apiKey) return error(res, 'Image generation not configured', 'GOOGLE_IMAGEN_API_KEY not set on server', 503)
 
-    const fetch = require('node-fetch')
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseModalities: ['IMAGE'] }
-        })
-      }
-    )
+    const { GoogleGenAI } = require('@google/genai')
+    const ai = new GoogleGenAI({ apiKey })
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-image-generation',
+      contents: prompt,
+      config: { responseModalities: ['IMAGE', 'TEXT'] }
+    })
 
-    if (!response.ok) {
-      const errBody = await response.text()
-      console.error('Gemini image API error:', errBody)
-      let hint = 'The image API returned an error. Try a different prompt.'
-      try {
-        const parsed = JSON.parse(errBody)
-        if (parsed?.error?.message) hint = parsed.error.message
-      } catch (_) {}
-      return error(res, 'Image generation failed', hint, 502)
+    const imagePart = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)
+    if (!imagePart?.inlineData?.data) {
+      console.error('Gemini image API - no image in response:', JSON.stringify(result).slice(0, 500))
+      return error(res, 'Image generation failed', 'No image returned from API', 502)
     }
-
-    const data = await response.json()
-    const imagePart = data?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)
-    if (!imagePart?.inlineData?.data) return error(res, 'Image generation failed', 'No image returned from API', 502)
 
     const { data: b64, mimeType = 'image/png' } = imagePart.inlineData
     const imageUrl = `data:${mimeType};base64,${b64}`
