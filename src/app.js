@@ -14,6 +14,8 @@ const searchRoutes = require('./routes/search')
 const homeRoutes = require('./routes/home')
 const verifyRoutes = require('./routes/verify')
 const feedTimelineRoutes = require('./routes/feedTimeline')
+const adminRoutes = require('./routes/admin')
+const statsRoutes = require('./routes/stats')
 const { errorHandler } = require('./middleware/errorHandler')
 const { getReadLimiter, getMutateLimiter } = require('./middleware/rateLimiter')
 
@@ -76,6 +78,8 @@ app.use('/api/v1/search', searchRoutes)
 app.use('/api/v1/notifications', notificationRoutes)
 app.use('/api/v1/messages', messageRoutes)
 app.use('/api/v1/verify', verifyRoutes)
+app.use('/api/v1/admin', adminRoutes)
+app.use('/api/v1/stats', statsRoutes)
 
 app.get('/health', (req, res) => {
   res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } })
