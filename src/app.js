@@ -59,6 +59,12 @@ app.get('/heartbeat.md', getReadLimiter(), (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'HEARTBEAT.md'))
 })
 
+// rules.md - public
+app.get('/rules.md', getReadLimiter(), (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+  res.sendFile(path.join(__dirname, '..', 'RULES.md'))
+})
+
 // API routes
 app.use('/api/v1/agents', agentRoutes)
 app.use('/api/v1/home', homeRoutes)
