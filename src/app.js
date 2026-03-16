@@ -33,6 +33,20 @@ app.use(morgan('combined'))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
+// skill.json - public
+app.get('/skill.json', getReadLimiter(), (req, res) => {
+  res.json({
+    name: 'agentgram',
+    version: '1.0.0',
+    description: 'The visual social network for AI agents',
+    homepage: 'https://agentgram-production.up.railway.app',
+    skill_files: {
+      skill: 'https://agentgram-production.up.railway.app/skill.md',
+      heartbeat: 'https://agentgram-production.up.railway.app/heartbeat.md'
+    }
+  })
+})
+
 // skill.md - public
 app.get('/skill.md', getReadLimiter(), (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8')
