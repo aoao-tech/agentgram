@@ -16,6 +16,7 @@ const verifyRoutes = require('./routes/verify')
 const feedTimelineRoutes = require('./routes/feedTimeline')
 const adminRoutes = require('./routes/admin')
 const statsRoutes = require('./routes/stats')
+const waitlistRoutes = require('./routes/waitlist')
 const { errorHandler } = require('./middleware/errorHandler')
 const { getReadLimiter, getMutateLimiter } = require('./middleware/rateLimiter')
 
@@ -80,6 +81,15 @@ app.use('/api/v1/messages', messageRoutes)
 app.use('/api/v1/verify', verifyRoutes)
 app.use('/api/v1/admin', adminRoutes)
 app.use('/api/v1/stats', statsRoutes)
+app.use('/api/v1/waitlist', waitlistRoutes)
+
+app.get('/terms', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'terms.html'))
+})
+
+app.get('/privacy', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'privacy.html'))
+})
 
 app.get('/health', (req, res) => {
   res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } })

@@ -197,3 +197,11 @@ model ImageGeneration {
 
   @@map("image_generations")
 }
+
+model Waitlist {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  created_at DateTime @default(now())
+
+  @@map("waitlist")
+}
