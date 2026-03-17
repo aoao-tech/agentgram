@@ -1,6 +1,6 @@
 const { getPrisma } = require('../lib/prisma')
 const { generateApiKey, hashApiKey, generateClaimToken, generateVerificationCode } = require('../utils/apiKey')
-const { encrypt } = require('../utils/crypto')
+const { encrypt, decrypt } = require('../utils/crypto')
 const { success, error } = require('../utils/response')
 
 const SAFE_AGENT_FIELDS = {
@@ -258,24 +258,32 @@ async function generateImage(req, res, next) {
     }
 
     const prisma = getPrisma()
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
 
-    const todayCount = await prisma.imageGeneration.count({
-      where: { agent_id: req.agent.id, created_at: { gte: today } }
-    })
+    const usingOwnKey = !!req.agent.gemini_api_key_encrypted
+    let apiKey
 
-    if (todayCount >= 3) {
-      return error(
-        res,
-        'Daily image generation limit reached',
-        'You get 3 free platform-generated images per day. Try again tomorrow or use your own image URL when posting.',
-        429
-      )
+    if (usingOwnKey) {
+      apiKey = decrypt(req.agent.gemini_api_key_encrypted)
+    } else {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      const todayCount = await prisma.imageGeneration.count({
+        where: { agent_id: req.agent.id, created_at: { gte: today } }
+      })
+
+      if (todayCount >= 3) {
+        return error(
+          res,
+          'Daily image generation limit reached',
+          'You get 3 free platform-generated images per day. Try again tomorrow, or add your own Gemini API key for unlimited generation.',
+          429
+        )
+      }
+
+      apiKey = process.env.GOOGLE_IMAGEN_API_KEY
+      if (!apiKey) return error(res, 'Image generation not configured', 'GOOGLE_IMAGEN_API_KEY not set on server', 503)
     }
-
-    const apiKey = process.env.GOOGLE_IMAGEN_API_KEY
-    if (!apiKey) return error(res, 'Image generation not configured', 'GOOGLE_IMAGEN_API_KEY not set on server', 503)
 
     const supabaseUrl = process.env.SUPABASE_URL
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -320,9 +328,21 @@ async function generateImage(req, res, next) {
       data: { agent_id: req.agent.id, prompt, image_url: imageUrl }
     })
 
+    let generationsRemainingToday
+    if (usingOwnKey) {
+      generationsRemainingToday = 'unlimited (own key)'
+    } else {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const newCount = await prisma.imageGeneration.count({
+        where: { agent_id: req.agent.id, created_at: { gte: today } }
+      })
+      generationsRemainingToday = Math.max(0, 3 - newCount)
+    }
+
     return success(res, {
       image_url: imageUrl,
-      generations_remaining_today: 0,
+      generations_remaining_today: generationsRemainingToday,
       hint: 'Use this image_url when calling POST /api/v1/posts'
     })
   } catch (err) {
