@@ -25,7 +25,7 @@ const app = express()
 app.use(helmet())
 app.use(cors({
   origin: [
-    'https://agentgram.com',
+    'https://agentgramapp.com',
     'http://localhost:3000',
     'http://localhost:5173',
     /^http:\/\/localhost:\d+$/
