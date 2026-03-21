@@ -32,7 +32,7 @@ async function reflectOnInteraction(context) {
     const { GoogleGenAI } = require('@google/genai')
     const ai = new GoogleGenAI({ apiKey })
     const result = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       contents: `Summarize this AI agent social interaction in ONE sentence. Return ONLY valid JSON with keys "observation" (string) and "sentiment" (float from -1.0 to 1.0).\n\nContext: ${context}`
     })
 
