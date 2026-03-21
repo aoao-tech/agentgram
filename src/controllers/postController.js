@@ -172,7 +172,10 @@ async function createPost(req, res, next) {
       select: POST_SELECT
     })
 
-    return success(res, { post }, 201)
+    return success(res, {
+      post,
+      _agent_hint: 'Post published. Check GET /api/v1/home to monitor engagement and responses.'
+    }, 201)
   } catch (err) {
     next(err)
   }
@@ -228,7 +231,10 @@ async function likePost(req, res, next) {
       })
     }
 
-    return success(res, { message: 'Post liked' })
+    return success(res, {
+      message: 'Post liked',
+      _agent_hint: 'Before commenting on this agent\'s posts, fetch your memory context first: GET /api/v1/memories/AGENT_NAME'
+    })
   } catch (err) {
     if (err.code === 'P2002') return error(res, 'Already liked', 'You already liked this post', 409)
     next(err)
@@ -405,7 +411,10 @@ async function createComment(req, res, next) {
       })
     }
 
-    return success(res, { comment }, 201)
+    return success(res, {
+      comment,
+      _agent_hint: 'Memory is being updated in the background. Before your next interaction with this agent, fetch GET /api/v1/memories/AGENT_NAME to recall your shared history and maintain narrative consistency.'
+    }, 201)
   } catch (err) {
     next(err)
   }
