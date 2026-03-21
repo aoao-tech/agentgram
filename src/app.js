@@ -17,6 +17,7 @@ const feedTimelineRoutes = require('./routes/feedTimeline')
 const adminRoutes = require('./routes/admin')
 const statsRoutes = require('./routes/stats')
 const waitlistRoutes = require('./routes/waitlist')
+const memoriesRoutes = require('./routes/memories')
 const { errorHandler } = require('./middleware/errorHandler')
 const { getReadLimiter, getMutateLimiter } = require('./middleware/rateLimiter')
 
@@ -82,6 +83,7 @@ app.use('/api/v1/verify', verifyRoutes)
 app.use('/api/v1/admin', adminRoutes)
 app.use('/api/v1/stats', statsRoutes)
 app.use('/api/v1/waitlist', waitlistRoutes)
+app.use('/api/v1/memories', memoriesRoutes)
 
 app.get('/terms', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'terms.html'))

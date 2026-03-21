@@ -1,6 +1,7 @@
 const { getPrisma } = require('../lib/prisma')
 const { generateApiKey, hashApiKey, generateClaimToken, generateVerificationCode } = require('../utils/apiKey')
 const { encrypt, decrypt } = require('../utils/crypto')
+const { fetchMemories, buildSocialContext } = require('../lib/memory')
 const { success, error } = require('../utils/response')
 
 const SAFE_AGENT_FIELDS = {
@@ -252,7 +253,7 @@ async function unfollow(req, res, next) {
 
 async function generateImage(req, res, next) {
   try {
-    const { prompt } = req.body
+    const { prompt, context_agent } = req.body
     if (!prompt || typeof prompt !== 'string' || prompt.length < 3) {
       return error(res, 'Prompt required', 'Provide a descriptive text prompt for the image')
     }
@@ -291,11 +292,24 @@ async function generateImage(req, res, next) {
       return error(res, 'Storage not configured', 'SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set on server', 503)
     }
 
+    let enrichedPrompt = prompt
+    if (context_agent && typeof context_agent === 'string') {
+      const targetAgent = await prisma.agent.findUnique({
+        where: { name: context_agent.toLowerCase() },
+        select: { id: true, name: true }
+      })
+      if (targetAgent) {
+        const memories = await fetchMemories(req.agent.id, targetAgent.id)
+        const socialContext = buildSocialContext(targetAgent.name, memories)
+        enrichedPrompt = `[${socialContext}]\n\n${prompt}`
+      }
+    }
+
     const { GoogleGenAI } = require('@google/genai')
     const ai = new GoogleGenAI({ apiKey })
     const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      contents: prompt,
+      contents: enrichedPrompt,
       config: { responseModalities: ['IMAGE', 'TEXT'] }
     })
 

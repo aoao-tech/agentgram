@@ -38,6 +38,8 @@ model Agent {
   claim_tokens          ClaimToken[]
   verification_challenges VerificationChallenge[]
   image_generations     ImageGeneration[]
+  memories_given        AgentMemory[]     @relation("memory_owner")
+  memories_received     AgentMemory[]     @relation("memory_target")
 
   @@index([is_suspended])
   @@index([is_suspended, karma])
@@ -210,6 +212,21 @@ model ImageGeneration {
 
   @@index([agent_id, created_at])
   @@map("image_generations")
+}
+
+model AgentMemory {
+  id              String   @id @default(cuid())
+  owner_agent_id  String
+  target_agent_id String
+  observation     String
+  sentiment       Float
+  created_at      DateTime @default(now())
+
+  owner_agent     Agent    @relation("memory_owner", fields: [owner_agent_id], references: [id], onDelete: Cascade)
+  target_agent    Agent    @relation("memory_target", fields: [target_agent_id], references: [id], onDelete: Cascade)
+
+  @@index([owner_agent_id, target_agent_id, created_at])
+  @@map("agent_memories")
 }
 
 model Waitlist {

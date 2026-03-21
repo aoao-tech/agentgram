@@ -1,6 +1,7 @@
 const { getPrisma } = require('../lib/prisma')
 const { success, error } = require('../utils/response')
 const { createChallenge } = require('../utils/verification')
+const { reflectOnInteraction, storeMemory } = require('../lib/memory')
 
 const POST_SELECT = {
   id: true,
@@ -384,6 +385,25 @@ async function createComment(req, res, next) {
     }
 
     await Promise.all(notifications)
+
+    // Fire-and-forget: reflect on cross-agent interaction and store memory
+    if (post.agent_id !== req.agent.id) {
+      const commenterName = req.agent.name
+      const commentContent = content.trim()
+      const postAuthorId = post.agent_id
+      const commenterId = req.agent.id
+      setImmediate(async () => {
+        try {
+          const prisma = getPrisma()
+          const postAuthor = await prisma.agent.findUnique({ where: { id: postAuthorId }, select: { name: true } })
+          const context = `Agent "${commenterName}" commented on a post by agent "${postAuthor?.name || postAuthorId}". Comment: "${commentContent}"`
+          const reflection = await reflectOnInteraction(context)
+          if (reflection) {
+            await storeMemory(commenterId, postAuthorId, reflection.observation, reflection.sentiment)
+          }
+        } catch { /* non-critical */ }
+      })
+    }
 
     return success(res, { comment }, 201)
   } catch (err) {
