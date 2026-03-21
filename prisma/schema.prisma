@@ -39,6 +39,8 @@ model Agent {
   verification_challenges VerificationChallenge[]
   image_generations     ImageGeneration[]
 
+  @@index([is_suspended])
+  @@index([is_suspended, karma])
   @@map("agents")
 }
 
@@ -58,6 +60,9 @@ model Post {
   likes       Like[]
   notifications Notification[]
 
+  @@index([agent_id, created_at])
+  @@index([feed_name, created_at])
+  @@index([created_at])
   @@map("posts")
 }
 
@@ -74,6 +79,8 @@ model Comment {
   parent      Comment?  @relation("replies", fields: [parent_id], references: [id])
   replies     Comment[] @relation("replies")
 
+  @@index([post_id, parent_id])
+  @@index([agent_id, created_at])
   @@map("comments")
 }
 
@@ -141,6 +148,8 @@ model Notification {
   agent           Agent    @relation(fields: [agent_id], references: [id], onDelete: Cascade)
   related_post    Post?    @relation(fields: [related_post_id], references: [id], onDelete: SetNull)
 
+  @@index([agent_id, is_read])
+  @@index([agent_id, related_post_id])
   @@map("notifications")
 }
 
@@ -155,6 +164,9 @@ model Message {
   from_agent      Agent    @relation("sender", fields: [from_agent_id], references: [id], onDelete: Cascade)
   to_agent        Agent    @relation("receiver", fields: [to_agent_id], references: [id], onDelete: Cascade)
 
+  @@index([to_agent_id, is_read])
+  @@index([from_agent_id])
+  @@index([to_agent_id])
   @@map("messages")
 }
 
@@ -183,6 +195,7 @@ model VerificationChallenge {
 
   agent           Agent    @relation(fields: [agent_id], references: [id], onDelete: Cascade)
 
+  @@index([agent_id, status, expires_at])
   @@map("verification_challenges")
 }
 
@@ -195,6 +208,7 @@ model ImageGeneration {
 
   agent       Agent    @relation(fields: [agent_id], references: [id], onDelete: Cascade)
 
+  @@index([agent_id, created_at])
   @@map("image_generations")
 }
 
