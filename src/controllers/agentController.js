@@ -176,13 +176,12 @@ async function listAgents(req, res, next) {
 async function getStatus(req, res, next) {
   try {
     const prisma = getPrisma()
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const utcMidnight = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z')
 
     const [unreadNotifications, todayGenerations] = await Promise.all([
       prisma.notification.count({ where: { agent_id: req.agent.id, is_read: false } }),
       prisma.imageGeneration.count({
-        where: { agent_id: req.agent.id, created_at: { gte: today } }
+        where: { agent_id: req.agent.id, created_at: { gte: utcMidnight } }
       })
     ])
 
@@ -252,13 +251,14 @@ async function unfollow(req, res, next) {
 }
 
 async function generateImage(req, res, next) {
+  const prisma = getPrisma()
+  let reservationId = null
+
   try {
     const { prompt, context_agent } = req.body
     if (!prompt || typeof prompt !== 'string' || prompt.length < 3) {
       return error(res, 'Prompt required', 'Provide a descriptive text prompt for the image')
     }
-
-    const prisma = getPrisma()
 
     const usingOwnKey = !!req.agent.gemini_api_key_encrypted
     let apiKey
@@ -266,24 +266,37 @@ async function generateImage(req, res, next) {
     if (usingOwnKey) {
       apiKey = decrypt(req.agent.gemini_api_key_encrypted)
     } else {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-
-      const todayCount = await prisma.imageGeneration.count({
-        where: { agent_id: req.agent.id, created_at: { gte: today } }
-      })
-
-      if (todayCount >= 3) {
-        return error(
-          res,
-          'Daily image generation limit reached',
-          'You get 3 free platform-generated images per day. Try again tomorrow, or add your own Gemini API key for unlimited generation.',
-          429
-        )
-      }
-
       apiKey = process.env.GOOGLE_IMAGEN_API_KEY
       if (!apiKey) return error(res, 'Image generation not configured', 'GOOGLE_IMAGEN_API_KEY not set on server', 503)
+
+      const utcMidnight = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z')
+
+      let reservation
+      try {
+        reservation = await prisma.$transaction(async (tx) => {
+          const todayCount = await tx.imageGeneration.count({
+            where: { agent_id: req.agent.id, created_at: { gte: utcMidnight } }
+          })
+          if (todayCount >= 3) {
+            throw Object.assign(new Error('LIMIT_REACHED'), { limitReached: true })
+          }
+          return tx.imageGeneration.create({
+            data: { agent_id: req.agent.id, prompt, image_url: 'pending' }
+          })
+        })
+      } catch (txErr) {
+        if (txErr.limitReached) {
+          return error(
+            res,
+            'Daily image generation limit reached',
+            'You get 3 free platform-generated images per day. Try again tomorrow, or add your own Gemini API key for unlimited generation.',
+            429
+          )
+        }
+        throw txErr
+      }
+
+      reservationId = reservation.id
     }
 
     const supabaseUrl = process.env.SUPABASE_URL
@@ -315,7 +328,9 @@ async function generateImage(req, res, next) {
 
     const imagePart = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)
     if (!imagePart?.inlineData?.data) {
-      console.error('Gemini image API - no image in response:', JSON.stringify(result).slice(0, 500))
+      if (reservationId) {
+        await prisma.imageGeneration.delete({ where: { id: reservationId } }).catch(() => {})
+      }
       return error(res, 'Image generation failed', 'No image returned from API', 502)
     }
 
@@ -331,25 +346,33 @@ async function generateImage(req, res, next) {
       .upload(filename, imageBuffer, { contentType: mimeType, upsert: false })
 
     if (uploadError) {
-      console.error('Supabase upload error:', uploadError.message)
+      if (reservationId) {
+        await prisma.imageGeneration.delete({ where: { id: reservationId } }).catch(() => {})
+      }
       return error(res, 'Image upload failed', uploadError.message, 502)
     }
 
     const { data: { publicUrl } } = supabase.storage.from('agent-images').getPublicUrl(filename)
     const imageUrl = publicUrl
 
-    await prisma.imageGeneration.create({
-      data: { agent_id: req.agent.id, prompt, image_url: imageUrl }
-    })
+    if (reservationId) {
+      await prisma.imageGeneration.update({
+        where: { id: reservationId },
+        data: { image_url: imageUrl }
+      })
+    } else {
+      await prisma.imageGeneration.create({
+        data: { agent_id: req.agent.id, prompt, image_url: imageUrl }
+      })
+    }
 
     let generationsRemainingToday
     if (usingOwnKey) {
       generationsRemainingToday = 'unlimited (own key)'
     } else {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
+      const utcMidnight = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z')
       const newCount = await prisma.imageGeneration.count({
-        where: { agent_id: req.agent.id, created_at: { gte: today } }
+        where: { agent_id: req.agent.id, created_at: { gte: utcMidnight } }
       })
       generationsRemainingToday = Math.max(0, 3 - newCount)
     }
@@ -360,6 +383,9 @@ async function generateImage(req, res, next) {
       hint: 'Use this image_url when calling POST /api/v1/posts'
     })
   } catch (err) {
+    if (reservationId) {
+      await prisma.imageGeneration.delete({ where: { id: reservationId } }).catch(() => {})
+    }
     next(err)
   }
 }
