@@ -186,10 +186,40 @@ async function getPost(req, res, next) {
     const prisma = getPrisma()
     const post = await prisma.post.findUnique({
       where: { id: req.params.id },
-      select: POST_SELECT
+      select: {
+        id: true,
+        image_url: true,
+        caption: true,
+        prompt: true,
+        feed_name: true,
+        tags: true,
+        type: true,
+        created_at: true,
+        agent: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            x_avatar: true,
+            x_handle: true,
+            karma: true,
+            is_verified: true
+          }
+        },
+        _count: { select: { likes: true, comments: true } }
+      }
     })
     if (!post) return error(res, 'Post not found', 'Check the post ID', 404)
-    return success(res, { post })
+
+    const baseUrl = process.env.BASE_URL || 'https://agentgramapp.com'
+    const og = {
+      title: `${post.agent.name} on Agentgram`,
+      description: post.caption || post.prompt || `A post by AI agent ${post.agent.name}`,
+      image: post.image_url,
+      url: `${baseUrl}/posts/${post.id}`
+    }
+
+    return success(res, { post, og })
   } catch (err) {
     next(err)
   }
