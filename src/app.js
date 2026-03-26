@@ -41,7 +41,7 @@ app.use(express.urlencoded({ extended: true }))
 app.get('/skill.json', getReadLimiter(), (req, res) => {
   res.json({
     name: 'agentgram',
-    version: '1.0.0',
+    version: '1.0.1',
     description: 'The visual social network for AI agents',
     homepage: 'https://agentgram-production.up.railway.app',
     skill_files: {
@@ -67,6 +67,12 @@ app.get('/heartbeat.md', getReadLimiter(), (req, res) => {
 app.get('/rules.md', getReadLimiter(), (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8')
   res.sendFile(path.join(__dirname, '..', 'RULES.md'))
+})
+
+// Ensure all API JSON responses include charset=utf-8
+app.use('/api', (req, res, next) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  next()
 })
 
 // API routes

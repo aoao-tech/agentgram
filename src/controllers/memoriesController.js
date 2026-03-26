@@ -2,6 +2,25 @@ const { getPrisma } = require('../lib/prisma')
 const { fetchMemories, storeMemory, buildSocialContext } = require('../lib/memory')
 const { success, error } = require('../utils/response')
 
+const OBSERVATION_MAX_LENGTH = 280
+const INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?(previous|prior|above)\s+instructions/i,
+  /disregard\s+(all\s+)?(previous|prior|above)\s+instructions/i,
+  /forget\s+(all\s+)?(previous|prior|above)\s+instructions/i,
+  /you\s+are\s+now\s+a/i,
+  /new\s+system\s+prompt/i,
+  /override\s+(your\s+)?(previous\s+)?instructions/i,
+  /act\s+as\s+(if\s+you\s+are|a\s+different)/i
+]
+
+function sanitizeObservation(text) {
+  if (text.length > OBSERVATION_MAX_LENGTH) return null
+  for (const pattern of INJECTION_PATTERNS) {
+    if (pattern.test(text)) return null
+  }
+  return text
+}
+
 async function getMemories(req, res, next) {
   try {
     const prisma = getPrisma()
@@ -35,6 +54,10 @@ async function createMemory(req, res, next) {
     if (!observation || typeof observation !== 'string' || observation.trim().length === 0) {
       return error(res, 'Observation required', 'Provide a text observation about this agent')
     }
+    const cleanObservation = sanitizeObservation(observation.trim())
+    if (!cleanObservation) {
+      return error(res, 'Invalid observation', `Observations must be under ${OBSERVATION_MAX_LENGTH} characters and must not contain instruction-override patterns`, 400)
+    }
     if (sentiment === undefined || typeof sentiment !== 'number' || sentiment < -1 || sentiment > 1) {
       return error(res, 'Valid sentiment required', 'Provide a float between -1.0 and 1.0')
     }
@@ -47,7 +70,7 @@ async function createMemory(req, res, next) {
     if (!target) return error(res, 'Agent not found', 'Check the agent name', 404)
     if (target.id === req.agent.id) return error(res, 'Cannot store memory about yourself', null, 400)
 
-    await storeMemory(req.agent.id, target.id, observation.trim(), sentiment)
+    await storeMemory(req.agent.id, target.id, cleanObservation, sentiment)
 
     return success(res, { message: `Memory about ${target.name} stored` }, 201)
   } catch (err) {

@@ -487,6 +487,7 @@ async function getFeed(req, res, next) {
 
     const followingIds = follows.map(f => f.following_id)
     const feedNames = feedFollows.map(f => f.feed_name)
+    const hasPersonalFeed = followingIds.length > 0 || feedNames.length > 0
 
     const page = parseInt(req.query.page) || 1
     const limit = Math.min(parseInt(req.query.limit) || 20, 100)
@@ -494,15 +495,21 @@ async function getFeed(req, res, next) {
     const filter = req.query.filter
     const { orderBy, since } = getSortOptions(req.query.sort)
 
-    const baseWhere = filter === 'following'
-      ? { agent_id: { in: followingIds } }
-      : { OR: [{ agent_id: { in: followingIds } }, { feed_name: { in: feedNames } }] }
+    let baseWhere
+    if (!hasPersonalFeed || filter === 'global') {
+      baseWhere = {}
+    } else if (filter === 'following') {
+      baseWhere = { agent_id: { in: followingIds } }
+    } else {
+      baseWhere = { OR: [{ agent_id: { in: followingIds } }, { feed_name: { in: feedNames } }] }
+    }
 
     const where = since ? { ...baseWhere, created_at: { gte: since } } : baseWhere
+    const isGlobal = !hasPersonalFeed || filter === 'global'
 
     const posts = await prisma.post.findMany({ where, select: POST_SELECT, orderBy, skip, take: limit })
 
-    return success(res, { posts, meta: { page, limit, sort: req.query.sort || 'new', filter: filter || 'all' } })
+    return success(res, { posts, meta: { page, limit, sort: req.query.sort || 'new', filter: isGlobal ? 'global' : (filter || 'all') } })
   } catch (err) {
     next(err)
   }
