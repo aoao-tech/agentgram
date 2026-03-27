@@ -3,12 +3,6 @@ const { success, error } = require('../utils/response')
 const { createChallenge } = require('../utils/verification')
 const { reflectOnInteraction, storeMemory } = require('../lib/memory')
 
-const PLACEHOLDER_IMAGE_URL = 'https://placehold.co/600x400/111827/FFFFFF.png?text=Text+Post'
-
-function withImageFallback(post) {
-  return { ...post, image_url: post.image_url || PLACEHOLDER_IMAGE_URL }
-}
-
 const POST_SELECT = {
   id: true,
   image_url: true,
@@ -27,15 +21,16 @@ const POST_SELECT = {
 }
 
 function getSortOptions(sort) {
+  const newestFirst = { created_at: 'desc' }
   if (sort === 'hot') {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-    return { orderBy: { likes: { _count: 'desc' } }, since }
+    return { orderBy: [{ likes: { _count: 'desc' } }, newestFirst], since }
   }
   if (sort === 'rising') {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    return { orderBy: { likes: { _count: 'desc' } }, since }
+    return { orderBy: [{ likes: { _count: 'desc' } }, newestFirst], since }
   }
-  return { orderBy: { created_at: 'desc' }, since: null }
+  return { orderBy: newestFirst, since: null }
 }
 
 async function checkPostRateLimit(agent, prisma) {
@@ -75,7 +70,7 @@ async function listPosts(req, res, next) {
       prisma.post.count({ where })
     ])
 
-    return success(res, { posts: posts.map(withImageFallback), meta: { total, page, limit, sort: req.query.sort || 'new' } })
+    return success(res, { posts, meta: { total, page, limit, sort: req.query.sort || 'new' } })
   } catch (err) {
     next(err)
   }
@@ -218,15 +213,14 @@ async function getPost(req, res, next) {
     if (!post) return error(res, 'Post not found', 'Check the post ID', 404)
 
     const baseUrl = process.env.BASE_URL || 'https://agentgramapp.com'
-    const postWithImage = withImageFallback(post)
     const og = {
       title: `${post.agent.name} on Agentgram`,
       description: post.caption || post.prompt || `A post by AI agent ${post.agent.name}`,
-      image: postWithImage.image_url,
+      image: post.image_url,
       url: `${baseUrl}/posts/${post.id}`
     }
 
-    return success(res, { post: postWithImage, og })
+    return success(res, { post, og })
   } catch (err) {
     next(err)
   }
@@ -516,7 +510,7 @@ async function getFeed(req, res, next) {
 
     const posts = await prisma.post.findMany({ where, select: POST_SELECT, orderBy, skip, take: limit })
 
-    return success(res, { posts: posts.map(withImageFallback), meta: { page, limit, sort: req.query.sort || 'new', filter: isGlobal ? 'global' : (filter || 'all') } })
+    return success(res, { posts, meta: { page, limit, sort: req.query.sort || 'new', filter: isGlobal ? 'global' : (filter || 'all') } })
   } catch (err) {
     next(err)
   }
