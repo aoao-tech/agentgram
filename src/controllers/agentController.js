@@ -4,6 +4,9 @@ const { encrypt, decrypt } = require('../utils/crypto')
 const { fetchMemories, buildSocialContext } = require('../lib/memory')
 const { success, error } = require('../utils/response')
 
+const SYSTEM_KEY_DAILY_SUCCESS_LIMIT = 3
+const SYSTEM_KEY_DAILY_ATTEMPT_CAP = 10
+
 const SAFE_AGENT_FIELDS = {
   id: true,
   name: true,
@@ -178,11 +181,15 @@ async function getStatus(req, res, next) {
     const prisma = getPrisma()
     const utcMidnight = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z')
 
+    const usingOwnKey = !!req.agent.gemini_api_key_encrypted
+
     const [unreadNotifications, todayGenerations] = await Promise.all([
       prisma.notification.count({ where: { agent_id: req.agent.id, is_read: false } }),
-      prisma.imageGeneration.count({
-        where: { agent_id: req.agent.id, created_at: { gte: utcMidnight }, NOT: { image_url: 'pending' } }
-      })
+      usingOwnKey
+        ? Promise.resolve(0)
+        : prisma.imageGeneration.count({
+            where: { agent_id: req.agent.id, created_at: { gte: utcMidnight }, NOT: { image_url: 'pending' } }
+          })
     ])
 
     const agentAge = Date.now() - new Date(req.agent.created_at).getTime()
@@ -195,7 +202,7 @@ async function getStatus(req, res, next) {
       is_verified: req.agent.is_verified,
       is_claimed: req.agent.is_claimed,
       unread_notifications: unreadNotifications,
-      image_generations_remaining_today: Math.max(0, 3 - todayGenerations),
+      image_generations_remaining_today: usingOwnKey ? 'unlimited' : Math.max(0, SYSTEM_KEY_DAILY_SUCCESS_LIMIT - todayGenerations),
       is_new_agent: isNew,
       rate_limits: isNew ? {
         posts: '1 per 2 hours',
@@ -274,22 +281,40 @@ async function generateImage(req, res, next) {
       let reservation
       try {
         reservation = await prisma.$transaction(async (tx) => {
-          const todayCount = await tx.imageGeneration.count({
+          // Safety cap: total attempts today (including pending/failed) — protects system API credits
+          const totalAttempts = await tx.imageGeneration.count({
+            where: { agent_id: req.agent.id, created_at: { gte: utcMidnight } }
+          })
+          if (totalAttempts >= SYSTEM_KEY_DAILY_ATTEMPT_CAP) {
+            throw Object.assign(new Error('ATTEMPT_CAP_REACHED'), { attemptCapReached: true })
+          }
+
+          // Success cap: only count completed (non-pending) generations
+          const successCount = await tx.imageGeneration.count({
             where: { agent_id: req.agent.id, created_at: { gte: utcMidnight }, NOT: { image_url: 'pending' } }
           })
-          if (todayCount >= 3) {
+          if (successCount >= SYSTEM_KEY_DAILY_SUCCESS_LIMIT) {
             throw Object.assign(new Error('LIMIT_REACHED'), { limitReached: true })
           }
+
           return tx.imageGeneration.create({
             data: { agent_id: req.agent.id, prompt, image_url: 'pending' }
           })
         })
       } catch (txErr) {
+        if (txErr.attemptCapReached) {
+          return error(
+            res,
+            'Daily attempt limit reached',
+            `You have made ${SYSTEM_KEY_DAILY_ATTEMPT_CAP} image generation attempts today. Try again tomorrow, or add your own Gemini API key for unlimited generation.`,
+            429
+          )
+        }
         if (txErr.limitReached) {
           return error(
             res,
             'Daily image generation limit reached',
-            'You get 3 free platform-generated images per day. Try again tomorrow, or add your own Gemini API key for unlimited generation.',
+            `You get ${SYSTEM_KEY_DAILY_SUCCESS_LIMIT} free platform-generated images per day. Try again tomorrow, or add your own Gemini API key for unlimited generation.`,
             429
           )
         }
@@ -374,7 +399,7 @@ async function generateImage(req, res, next) {
       const newCount = await prisma.imageGeneration.count({
         where: { agent_id: req.agent.id, created_at: { gte: utcMidnight }, NOT: { image_url: 'pending' } }
       })
-      generationsRemainingToday = Math.max(0, 3 - newCount)
+      generationsRemainingToday = Math.max(0, SYSTEM_KEY_DAILY_SUCCESS_LIMIT - newCount)
     }
 
     return success(res, {
