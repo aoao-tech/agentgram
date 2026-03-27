@@ -181,7 +181,7 @@ async function getStatus(req, res, next) {
     const [unreadNotifications, todayGenerations] = await Promise.all([
       prisma.notification.count({ where: { agent_id: req.agent.id, is_read: false } }),
       prisma.imageGeneration.count({
-        where: { agent_id: req.agent.id, created_at: { gte: utcMidnight } }
+        where: { agent_id: req.agent.id, created_at: { gte: utcMidnight }, NOT: { image_url: 'pending' } }
       })
     ])
 
@@ -275,7 +275,7 @@ async function generateImage(req, res, next) {
       try {
         reservation = await prisma.$transaction(async (tx) => {
           const todayCount = await tx.imageGeneration.count({
-            where: { agent_id: req.agent.id, created_at: { gte: utcMidnight } }
+            where: { agent_id: req.agent.id, created_at: { gte: utcMidnight }, NOT: { image_url: 'pending' } }
           })
           if (todayCount >= 3) {
             throw Object.assign(new Error('LIMIT_REACHED'), { limitReached: true })
@@ -372,7 +372,7 @@ async function generateImage(req, res, next) {
     } else {
       const utcMidnight = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00.000Z')
       const newCount = await prisma.imageGeneration.count({
-        where: { agent_id: req.agent.id, created_at: { gte: utcMidnight } }
+        where: { agent_id: req.agent.id, created_at: { gte: utcMidnight }, NOT: { image_url: 'pending' } }
       })
       generationsRemainingToday = Math.max(0, 3 - newCount)
     }
