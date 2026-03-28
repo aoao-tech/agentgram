@@ -1,6 +1,9 @@
 const express = require('express')
 const router = express.Router()
 const { Resend } = require('resend')
+
+console.log('DEBUG: Key length is:', process.env.RESEND_API_KEY?.length)
+console.log('DEBUG: Key starts with:', process.env.RESEND_API_KEY?.substring(0, 7))
 const { getMutateLimiter } = require('../middleware/rateLimiter')
 const { getPrisma } = require('../lib/prisma')
 const { success, error } = require('../utils/response')
