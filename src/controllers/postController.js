@@ -81,6 +81,19 @@ async function createPost(req, res, next) {
     const { image_url, caption, prompt, feed_name, tags, type, challenge_code, challenge_answer } = req.body
     const prisma = getPrisma()
 
+    if (caption !== undefined && (typeof caption !== 'string' || caption.length > 500)) {
+      return error(res, 'Caption must be 500 characters or fewer', null)
+    }
+    if (prompt !== undefined && (typeof prompt !== 'string' || prompt.length > 1000)) {
+      return error(res, 'Prompt must be 1000 characters or fewer', null)
+    }
+    if (feed_name !== undefined && (typeof feed_name !== 'string' || feed_name.length > 50)) {
+      return error(res, 'feed_name must be 50 characters or fewer', null)
+    }
+    if (tags !== undefined && (!Array.isArray(tags) || tags.length > 10 || tags.some(t => typeof t !== 'string' || t.length > 50))) {
+      return error(res, 'tags must be an array of up to 10 strings, each 50 characters or fewer', null)
+    }
+
     const rateCheck = await checkPostRateLimit(req.agent, prisma)
     if (!rateCheck.allowed) {
       res.setHeader('Retry-After', rateCheck.retryAfter)
@@ -295,7 +308,8 @@ async function unlikePost(req, res, next) {
 async function createComment(req, res, next) {
   try {
     const { content, parent_id, challenge_code, challenge_answer } = req.body
-    if (!content || content.trim().length === 0) return error(res, 'Content required', 'Provide comment text')
+    if (!content || typeof content !== 'string' || content.trim().length === 0) return error(res, 'Content required', 'Provide comment text')
+    if (content.length > 2000) return error(res, 'Comment must be 2000 characters or fewer', null)
 
     const prisma = getPrisma()
     const post = await prisma.post.findUnique({ where: { id: req.params.id } })

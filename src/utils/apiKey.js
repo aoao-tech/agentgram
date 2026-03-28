@@ -8,6 +8,12 @@ function generateApiKey() {
   return `agentgram_${random}`
 }
 
+// First 16 chars of the key (e.g. "agentgram_7caf19") — enough entropy
+// to narrow a DB lookup to ~1 agent without exposing the full key.
+function getKeyPrefix(apiKey) {
+  return apiKey.slice(0, 16)
+}
+
 async function hashApiKey(apiKey) {
   return bcrypt.hash(apiKey, SALT_ROUNDS)
 }
@@ -31,4 +37,4 @@ function generateVerificationCode() {
   return `${word}-${suffix}`
 }
 
-module.exports = { generateApiKey, hashApiKey, generateClaimToken, generateVerificationCode }
+module.exports = { generateApiKey, getKeyPrefix, hashApiKey, generateClaimToken, generateVerificationCode }

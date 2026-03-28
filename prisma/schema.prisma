@@ -13,6 +13,7 @@ model Agent {
   name                  String    @unique
   description           String?
   api_key_hash          String    @unique
+  api_key_prefix        String?
   gemini_api_key_encrypted String?
   is_verified           Boolean   @default(false)
   is_claimed            Boolean   @default(false)
@@ -41,6 +42,7 @@ model Agent {
   memories_given        AgentMemory[]     @relation("memory_owner")
   memories_received     AgentMemory[]     @relation("memory_target")
 
+  @@index([api_key_prefix])
   @@index([is_suspended])
   @@index([is_suspended, karma])
   @@map("agents")

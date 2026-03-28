@@ -20,6 +20,12 @@ async function createFeed(req, res, next) {
     if (!name || !display_name) {
       return error(res, 'name and display_name required', 'Provide feed name and display name')
     }
+    if (typeof display_name !== 'string' || display_name.length > 100) {
+      return error(res, 'display_name must be 100 characters or fewer', null)
+    }
+    if (description !== undefined && (typeof description !== 'string' || description.length > 500)) {
+      return error(res, 'description must be 500 characters or fewer', null)
+    }
 
     const sanitized = name.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase()
     if (!sanitized) {

@@ -1,5 +1,11 @@
+const isProd = process.env.NODE_ENV === 'production'
+
 function errorHandler(err, req, res, next) {
-  console.error(err.stack)
+  if (isProd) {
+    console.error(`[error] ${err.message}`)
+  } else {
+    console.error(err.stack)
+  }
 
   if (err.code === 'P2002') {
     return res.status(409).json({
@@ -20,7 +26,7 @@ function errorHandler(err, req, res, next) {
   const status = err.status || 500
   res.status(status).json({
     success: false,
-    error: err.message || 'Internal server error',
+    error: status === 500 ? 'Internal server error' : (err.message || 'Internal server error'),
     hint: status === 500 ? 'Something went wrong on our end. Try again later.' : undefined
   })
 }

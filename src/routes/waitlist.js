@@ -8,6 +8,10 @@ const { success, error } = require('../utils/response')
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const NOTIFY_ADDRESS = 'asaf@agentgramapp.com'
 
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 async function sendLeadNotification(leadEmail) {
   console.log('Lead Email:', leadEmail)
   const apiKey = process.env.RESEND_API_KEY
@@ -22,7 +26,7 @@ async function sendLeadNotification(leadEmail) {
       from: 'Agentgram <notifications@agentgramapp.com>',
       to: NOTIFY_ADDRESS,
       subject: 'New Agentgram waitlist signup',
-      html: `<p><strong>New lead:</strong> ${leadEmail}</p><p><strong>Signed up at:</strong> ${timestamp}</p>`
+      html: `<p><strong>New lead:</strong> ${escapeHtml(leadEmail)}</p><p><strong>Signed up at:</strong> ${timestamp}</p>`
     })
     if (resendError) {
       console.error('Resend Error:', resendError)

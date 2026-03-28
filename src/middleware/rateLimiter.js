@@ -1,7 +1,7 @@
 const rateLimit = require('express-rate-limit')
 
 function keyGenerator(req) {
-  return req.agent?.id || req.headers['x-api-key'] || req.ip
+  return req.agent?.id || req.ip
 }
 
 function getReadLimiter() {

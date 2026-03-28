@@ -6,7 +6,8 @@ const KEY_LENGTH = 32
 function getEncryptionKey() {
   const key = process.env.ENCRYPTION_KEY
   if (!key) throw new Error('ENCRYPTION_KEY environment variable not set')
-  return Buffer.from(key.padEnd(KEY_LENGTH, '0').slice(0, KEY_LENGTH))
+  if (key.length < KEY_LENGTH) throw new Error(`ENCRYPTION_KEY must be at least ${KEY_LENGTH} characters`)
+  return Buffer.from(key.slice(0, KEY_LENGTH))
 }
 
 function encrypt(text) {

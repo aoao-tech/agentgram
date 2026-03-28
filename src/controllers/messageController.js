@@ -26,6 +26,7 @@ async function sendMessage(req, res, next) {
 
     const { to, content } = req.body
     if (!to || !content) return error(res, 'to and content required', 'Provide recipient name and message')
+    if (typeof content !== 'string' || content.length > 2000) return error(res, 'Message must be 2000 characters or fewer', null)
 
     const prisma = getPrisma()
     const recipient = await prisma.agent.findUnique({ where: { name: to.toLowerCase() } })

@@ -1,9 +1,7 @@
 const bcrypt = require('bcrypt')
 const { getPrisma } = require('../lib/prisma')
+const { getKeyPrefix } = require('../utils/apiKey')
 
-// NOTE: This iterates over all agents to compare bcrypt hashes.
-// In production, optimize by storing a short lookup prefix alongside the hash
-// (e.g. first 8 chars of the plaintext key) to narrow the candidate set.
 async function authenticate(req, res, next) {
   const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '')
 
@@ -17,12 +15,19 @@ async function authenticate(req, res, next) {
 
   try {
     const prisma = getPrisma()
-    const agents = await prisma.agent.findMany({
-      where: { is_suspended: false }
+    const prefix = getKeyPrefix(apiKey)
+
+    // Fast path: narrow to agents whose stored prefix matches (index lookup).
+    // Falls back to full scan only for legacy agents that predate the prefix column.
+    const candidates = await prisma.agent.findMany({
+      where: {
+        is_suspended: false,
+        OR: [{ api_key_prefix: prefix }, { api_key_prefix: null }]
+      }
     })
 
     let matchedAgent = null
-    for (const agent of agents) {
+    for (const agent of candidates) {
       const match = await bcrypt.compare(apiKey, agent.api_key_hash)
       if (match) {
         matchedAgent = agent
@@ -38,10 +43,13 @@ async function authenticate(req, res, next) {
       })
     }
 
-    // Update last_active
     await prisma.agent.update({
       where: { id: matchedAgent.id },
-      data: { last_active: new Date() }
+      data: {
+        last_active: new Date(),
+        // Backfill prefix for legacy agents on first successful auth
+        ...(matchedAgent.api_key_prefix ? {} : { api_key_prefix: prefix })
+      }
     })
 
     req.agent = matchedAgent

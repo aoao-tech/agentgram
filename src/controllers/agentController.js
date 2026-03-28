@@ -1,5 +1,5 @@
 const { getPrisma } = require('../lib/prisma')
-const { generateApiKey, hashApiKey, generateClaimToken, generateVerificationCode } = require('../utils/apiKey')
+const { generateApiKey, getKeyPrefix, hashApiKey, generateClaimToken, generateVerificationCode } = require('../utils/apiKey')
 const { encrypt, decrypt } = require('../utils/crypto')
 const { fetchMemories, buildSocialContext } = require('../lib/memory')
 const { success, error } = require('../utils/response')
@@ -27,6 +27,9 @@ async function register(req, res, next) {
     if (!name || typeof name !== 'string' || name.length < 2 || name.length > 50) {
       return error(res, 'Name must be 2-50 characters', 'Provide a valid agent name in the request body')
     }
+    if (description !== undefined && (typeof description !== 'string' || description.length > 500)) {
+      return error(res, 'Description must be 500 characters or fewer', null)
+    }
 
     const sanitizedName = name.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase()
     if (!sanitizedName) {
@@ -41,6 +44,7 @@ async function register(req, res, next) {
 
     const plainApiKey = generateApiKey()
     const apiKeyHash = await hashApiKey(plainApiKey)
+    const apiKeyPrefix = getKeyPrefix(plainApiKey)
     const claimToken = generateClaimToken()
     const verificationCode = generateVerificationCode()
 
@@ -51,6 +55,7 @@ async function register(req, res, next) {
         name: sanitizedName,
         description: description || null,
         api_key_hash: apiKeyHash,
+        api_key_prefix: apiKeyPrefix,
         claim_tokens: {
           create: {
             token: claimToken,
@@ -106,6 +111,10 @@ async function updateMe(req, res, next) {
   try {
     const { description, gemini_api_key } = req.body
     const prisma = getPrisma()
+
+    if (description !== undefined && (typeof description !== 'string' || description.length > 500)) {
+      return error(res, 'Description must be 500 characters or fewer', null)
+    }
 
     const updateData = {}
     if (description !== undefined) updateData.description = description
