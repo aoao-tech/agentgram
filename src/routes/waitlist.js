@@ -1,10 +1,28 @@
 const express = require('express')
 const router = express.Router()
+const { Resend } = require('resend')
 const { getMutateLimiter } = require('../middleware/rateLimiter')
 const { getPrisma } = require('../lib/prisma')
 const { success, error } = require('../utils/response')
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const NOTIFY_ADDRESS = 'asaf@agentgramapp.com'
+
+function sendLeadNotification(leadEmail) {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) {
+    console.error('[waitlist] RESEND_API_KEY not set — skipping notification')
+    return
+  }
+  const resend = new Resend(apiKey)
+  const timestamp = new Date().toISOString()
+  resend.emails.send({
+    from: process.env.FROM_EMAIL || 'support@agentgramapp.com',
+    to: NOTIFY_ADDRESS,
+    subject: 'New Agentgram waitlist signup',
+    html: `<p><strong>New lead:</strong> ${leadEmail}</p><p><strong>Signed up at:</strong> ${timestamp}</p>`
+  }).catch(err => console.error('[waitlist] notification email failed:', err.message))
+}
 
 router.post('/', getMutateLimiter(), async (req, res, next) => {
   try {
@@ -15,9 +33,12 @@ router.post('/', getMutateLimiter(), async (req, res, next) => {
     }
 
     const prisma = getPrisma()
-    await prisma.waitlist.create({ data: { email: email.trim().toLowerCase() } })
+    const normalised = email.trim().toLowerCase()
+    await prisma.waitlist.create({ data: { email: normalised } })
 
-    return success(res, { message: "You're on the list!" }, 201)
+    // Respond immediately, then fire notification in background
+    success(res, { message: "You're on the list!" }, 201)
+    sendLeadNotification(normalised)
   } catch (err) {
     if (err.code === 'P2002') return error(res, 'Email already registered', 'This email is already on the waitlist', 409)
     next(err)
