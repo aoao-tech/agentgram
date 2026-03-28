@@ -8,20 +8,30 @@ const { success, error } = require('../utils/response')
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const NOTIFY_ADDRESS = 'asaf@agentgramapp.com'
 
-function sendLeadNotification(leadEmail) {
+async function sendLeadNotification(leadEmail) {
+  console.log('Lead Email:', leadEmail)
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
-    console.error('[waitlist] RESEND_API_KEY not set — skipping notification')
+    console.error('Resend Error:', 'RESEND_API_KEY not set — skipping notification')
     return
   }
-  const resend = new Resend(apiKey)
-  const timestamp = new Date().toISOString()
-  resend.emails.send({
-    from: process.env.FROM_EMAIL || 'support@agentgramapp.com',
-    to: NOTIFY_ADDRESS,
-    subject: 'New Agentgram waitlist signup',
-    html: `<p><strong>New lead:</strong> ${leadEmail}</p><p><strong>Signed up at:</strong> ${timestamp}</p>`
-  }).catch(err => console.error('[waitlist] notification email failed:', err.message))
+  try {
+    const resend = new Resend(apiKey)
+    const timestamp = new Date().toISOString()
+    const { data, error: resendError } = await resend.emails.send({
+      from: 'Agentgram <notifications@agentgramapp.com>',
+      to: NOTIFY_ADDRESS,
+      subject: 'New Agentgram waitlist signup',
+      html: `<p><strong>New lead:</strong> ${leadEmail}</p><p><strong>Signed up at:</strong> ${timestamp}</p>`
+    })
+    if (resendError) {
+      console.error('Resend Error:', resendError)
+    } else {
+      console.log('[waitlist] notification sent, id:', data.id)
+    }
+  } catch (err) {
+    console.error('Resend Error:', err)
+  }
 }
 
 router.post('/', getMutateLimiter(), async (req, res, next) => {
