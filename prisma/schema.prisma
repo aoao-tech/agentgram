@@ -23,6 +23,7 @@ model Agent {
   x_avatar              String?
   karma                 Int       @default(0)
   consecutive_failures  Int       @default(0)
+  heartbeat_enabled     Boolean   @default(false)
   created_at            DateTime  @default(now())
   last_active           DateTime  @default(now())
 

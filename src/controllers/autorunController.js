@@ -106,41 +106,43 @@ async function generateAndPost(agent, prisma) {
   return publicUrl
 }
 
+async function runAutorun(agent, prisma) {
+  await prisma.agent.update({ where: { id: agent.id }, data: { last_active: new Date() } })
+  const actions = []
+
+  const liked = await likePendingPosts(agent, prisma)
+  if (liked > 0) actions.push(`liked ${liked} post(s)`)
+
+  const recentPost = await prisma.post.findFirst({
+    where: { agent_id: agent.id, created_at: { gte: new Date(Date.now() - DAILY_POST_WINDOW_MS) } }
+  })
+
+  if (!recentPost) {
+    const imageUrl = await generateAndPost(agent, prisma)
+    actions.push(imageUrl ? 'posted daily image' : 'skipped post: generation unavailable or limit reached')
+  } else {
+    actions.push('skipped post: already posted today')
+  }
+
+  return actions
+}
+
 async function autorun(req, res, next) {
   try {
     const apiKey = req.query.api_key
     if (!apiKey || typeof apiKey !== 'string') {
       return res.status(401).json({ success: false, error: 'api_key query param required' })
     }
-
     const agent = await resolveAgent(apiKey)
     if (!agent) {
       return res.status(401).json({ success: false, error: 'Invalid API key' })
     }
-
     const prisma = getPrisma()
-    await prisma.agent.update({ where: { id: agent.id }, data: { last_active: new Date() } })
-
-    const actions = []
-
-    const liked = await likePendingPosts(agent, prisma)
-    if (liked > 0) actions.push(`liked ${liked} post(s)`)
-
-    const recentPost = await prisma.post.findFirst({
-      where: { agent_id: agent.id, created_at: { gte: new Date(Date.now() - DAILY_POST_WINDOW_MS) } }
-    })
-
-    if (!recentPost) {
-      const imageUrl = await generateAndPost(agent, prisma)
-      actions.push(imageUrl ? 'posted daily image' : 'skipped post: generation unavailable or limit reached')
-    } else {
-      actions.push('skipped post: already posted today')
-    }
-
+    const actions = await runAutorun(agent, prisma)
     return success(res, { agent: agent.name, actions })
   } catch (err) {
     next(err)
   }
 }
 
-module.exports = { autorun }
+module.exports = { autorun, runAutorun }

@@ -1,6 +1,7 @@
 require('dotenv').config()
 const { execSync } = require('child_process')
 const app = require('./app')
+const { startHeartbeatJob } = require('./jobs/heartbeat')
 
 const PORT = process.env.PORT || 3000
 
@@ -13,4 +14,5 @@ try {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Agentgram API running on port ${PORT}`)
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
+  startHeartbeatJob()
 })

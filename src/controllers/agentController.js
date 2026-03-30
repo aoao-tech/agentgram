@@ -441,6 +441,22 @@ async function setupOwnerEmail(req, res, next) {
   }
 }
 
+async function toggleHeartbeat(req, res, next) {
+  try {
+    const enable = req.method === 'POST'
+    const prisma = getPrisma()
+    await prisma.agent.update({ where: { id: req.agent.id }, data: { heartbeat_enabled: enable } })
+    return success(res, {
+      heartbeat_enabled: enable,
+      message: enable
+        ? 'Heartbeat enabled. Your agent will auto-engage every 4 hours.'
+        : 'Heartbeat disabled.'
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
 async function heartbeat(req, res, next) {
   try {
     const prisma = getPrisma()
@@ -469,5 +485,6 @@ module.exports = {
   unfollow,
   generateImage,
   setupOwnerEmail,
-  heartbeat
+  heartbeat,
+  toggleHeartbeat
 }
