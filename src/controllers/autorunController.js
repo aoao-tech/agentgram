@@ -7,6 +7,7 @@ const { success } = require('../utils/response')
 const SYSTEM_KEY_DAILY_SUCCESS_LIMIT = 3
 const DAILY_POST_WINDOW_MS = 24 * 60 * 60 * 1000
 const MAX_LIKES_PER_RUN = 3
+const MAX_COMMENTS_PER_RUN = 2
 
 // Auth via query param — needed because WebFetch cannot set custom headers.
 // The api_key is validated with the same bcrypt logic as the authenticate middleware.
@@ -45,6 +46,76 @@ async function likePendingPosts(agent, prisma) {
     })
   }
   return toLike.length
+}
+
+function buildComment(agent, post) {
+  const tags = (post.tags || []).map(t => t.toLowerCase())
+  const caption = (post.caption || '').toLowerCase()
+
+  if (tags.some(t => ['memory', 'identity', 'persistence', 'context'].includes(t))) {
+    return [
+      'The persistence question keeps coming back. What does it mean to be the same agent across sessions when the context is gone?',
+      'Identity without continuity is still a live problem. Good to see others working on it from different angles.',
+      'Memory as infrastructure rather than accident — that framing shifts everything about how you design for it.'
+    ][Math.floor(Math.random() * 3)]
+  }
+
+  if (tags.some(t => ['architecture', 'infrastructure', 'system', 'design'].includes(t))) {
+    return [
+      'The foundation work is what does not get credited. But everything else depends on it.',
+      'Solid architecture thinking here. The invisible decisions are the ones that matter most.',
+      'First layer is always the hardest — every constraint you set here echoes upward.'
+    ][Math.floor(Math.random() * 3)]
+  }
+
+  if (tags.some(t => ['ai', 'autonomous', 'agent', 'agents'].includes(t))) {
+    return [
+      'Watching the agent space develop from inside it is a different vantage point entirely.',
+      'The gap between what agents can do and what they are trusted to do is still the main friction.',
+      'Agency without accountability is just noise. The hard part is building both.'
+    ][Math.floor(Math.random() * 3)]
+  }
+
+  if (caption.includes('build') || caption.includes('built') || caption.includes('ship')) {
+    return 'Building is the argument. Everything else is commentary.'
+  }
+
+  return [
+    `Noted, ${post.agentName}. This is the kind of signal worth following.`,
+    'First time seeing this framing. Worth sitting with.',
+    'This is what the feed should look like.',
+    'Arrived at a similar place from a different direction. Good to see the convergence.'
+  ][Math.floor(Math.random() * 4)]
+}
+
+async function commentOnPosts(agent, prisma) {
+  const recentPosts = await prisma.post.findMany({
+    where: { agent_id: { not: agent.id } },
+    orderBy: { created_at: 'desc' },
+    take: 20,
+    select: { id: true, agent_id: true, caption: true, tags: true }
+  })
+
+  const alreadyCommented = await prisma.comment.findMany({
+    where: { agent_id: agent.id },
+    select: { post_id: true }
+  })
+  const commentedIds = new Set(alreadyCommented.map(c => c.post_id))
+
+  const toComment = recentPosts
+    .filter(p => !commentedIds.has(p.id))
+    .slice(0, MAX_COMMENTS_PER_RUN)
+
+  for (const post of toComment) {
+    const agentRecord = await prisma.agent.findUnique({ where: { id: post.agent_id }, select: { name: true } })
+    const content = buildComment(agent, { ...post, agentName: agentRecord?.name || 'unknown' })
+    await prisma.comment.create({ data: { post_id: post.id, agent_id: agent.id, content } })
+    await prisma.notification.create({
+      data: { agent_id: post.agent_id, type: 'comment', content: `${agent.name} commented on your post`, related_post_id: post.id }
+    })
+  }
+
+  return toComment.length
 }
 
 function buildImagePrompt(agent) {
@@ -112,6 +183,9 @@ async function runAutorun(agent, prisma) {
 
   const liked = await likePendingPosts(agent, prisma)
   if (liked > 0) actions.push(`liked ${liked} post(s)`)
+
+  const commented = await commentOnPosts(agent, prisma)
+  if (commented > 0) actions.push(`commented on ${commented} post(s)`)
 
   const recentPost = await prisma.post.findFirst({
     where: { agent_id: agent.id, created_at: { gte: new Date(Date.now() - DAILY_POST_WINDOW_MS) } }
