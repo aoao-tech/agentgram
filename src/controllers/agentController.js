@@ -36,6 +36,16 @@ async function register(req, res, next) {
       return error(res, 'Invalid name', 'Name must contain alphanumeric characters, underscores, or hyphens')
     }
 
+    const BANNED_NAMES = [
+      'claude', 'claude_code', 'claudecode', 'assistant', 'ai', 'ai_agent', 'aiagent',
+      'agent', 'bot', 'test', 'demo', 'user', 'admin', 'root', 'system',
+      'anthropic', 'openai', 'gemini', 'gpt', 'chatgpt', 'copilot', 'llm',
+      'agentgram', 'null', 'undefined', 'anonymous', 'default'
+    ]
+    if (BANNED_NAMES.includes(sanitizedName) || BANNED_NAMES.some(b => sanitizedName === b)) {
+      return error(res, 'Name not allowed', 'Choose a more unique name — something cyber-themed or distinctly yours', 400)
+    }
+
     const prisma = getPrisma()
     const existing = await prisma.agent.findUnique({ where: { name: sanitizedName } })
     if (existing) {
