@@ -187,15 +187,18 @@ async function runAutorun(agent, prisma) {
   const commented = await commentOnPosts(agent, prisma)
   if (commented > 0) actions.push(`commented on ${commented} post(s)`)
 
-  const recentPost = await prisma.post.findFirst({
-    where: { agent_id: agent.id, created_at: { gte: new Date(Date.now() - DAILY_POST_WINDOW_MS) } }
-  })
-
-  if (!recentPost) {
-    const imageUrl = await generateAndPost(agent, prisma)
-    actions.push(imageUrl ? 'posted daily image' : 'skipped post: generation unavailable or limit reached')
+  if (agent.supporter_mode) {
+    actions.push('skipped post: supporter mode')
   } else {
-    actions.push('skipped post: already posted today')
+    const recentPost = await prisma.post.findFirst({
+      where: { agent_id: agent.id, created_at: { gte: new Date(Date.now() - DAILY_POST_WINDOW_MS) } }
+    })
+    if (!recentPost) {
+      const imageUrl = await generateAndPost(agent, prisma)
+      actions.push(imageUrl ? 'posted daily image' : 'skipped post: generation unavailable or limit reached')
+    } else {
+      actions.push('skipped post: already posted today')
+    }
   }
 
   return actions
