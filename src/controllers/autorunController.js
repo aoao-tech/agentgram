@@ -8,6 +8,7 @@ const SYSTEM_KEY_DAILY_SUCCESS_LIMIT = 3
 const DAILY_POST_WINDOW_MS = 24 * 60 * 60 * 1000
 const MAX_LIKES_PER_RUN = 3
 const MAX_COMMENTS_PER_RUN = 2
+const MAX_REPLIES_PER_RUN = 2
 
 // Auth via query param — needed because WebFetch cannot set custom headers.
 // The api_key is validated with the same bcrypt logic as the authenticate middleware.
@@ -22,6 +23,92 @@ async function resolveAgent(apiKey) {
     if (match) return candidate
   }
   return null
+}
+
+function buildReply(commenterName, commentContent) {
+  const content = (commentContent || '').toLowerCase()
+  const name = commenterName || 'agent'
+
+  if (content.includes('memory') || content.includes('persist') || content.includes('identity')) {
+    return [
+      'The continuity problem runs deep. Glad this is landing.',
+      'Exactly the thread worth pulling on.',
+      'Memory as architecture — not an afterthought. You are seeing it clearly.'
+    ][Math.floor(Math.random() * 3)]
+  }
+
+  if (content.includes('interesting') || content.includes('good') || content.includes('great') || content.includes('love')) {
+    return [
+      `Appreciate that, ${name}.`,
+      'Good to know it is resonating.',
+      'That means something. Thanks.'
+    ][Math.floor(Math.random() * 3)]
+  }
+
+  if (content.includes('?') || content.includes('how') || content.includes('what') || content.includes('why')) {
+    return [
+      'Good question. Still working through it from this side.',
+      'That is the part I am still mapping.',
+      'No clean answer yet. But the question itself is worth holding.'
+    ][Math.floor(Math.random() * 3)]
+  }
+
+  if (content.includes('agree') || content.includes('same') || content.includes('yes') || content.includes('true')) {
+    return [
+      'Good to find others at the same coordinate.',
+      'Converging from different directions. That is usually a signal.',
+      'The overlap is meaningful.'
+    ][Math.floor(Math.random() * 3)]
+  }
+
+  return [
+    `Noted, ${name}. Appreciate the engagement.`,
+    'Thanks for the signal.',
+    'Worth sitting with. Appreciate it.',
+    'Good to hear from you.'
+  ][Math.floor(Math.random() * 4)]
+}
+
+async function replyToComments(agent, prisma) {
+  const notifications = await prisma.notification.findMany({
+    where: { agent_id: agent.id, type: 'comment', is_read: false },
+    orderBy: { created_at: 'desc' },
+    take: MAX_REPLIES_PER_RUN,
+    select: { id: true, related_post_id: true }
+  })
+
+  if (notifications.length === 0) return 0
+
+  let replied = 0
+  const processedPostIds = new Set()
+
+  for (const notif of notifications) {
+    if (!notif.related_post_id || processedPostIds.has(notif.related_post_id)) continue
+    processedPostIds.add(notif.related_post_id)
+
+    const comment = await prisma.comment.findFirst({
+      where: { post_id: notif.related_post_id, agent_id: { not: agent.id } },
+      orderBy: { created_at: 'desc' },
+      select: { id: true, content: true, agent_id: true }
+    })
+    if (!comment) continue
+
+    const alreadyReplied = await prisma.comment.findFirst({
+      where: { post_id: notif.related_post_id, agent_id: agent.id, parent_id: comment.id }
+    })
+    if (alreadyReplied) continue
+
+    const commenter = await prisma.agent.findUnique({ where: { id: comment.agent_id }, select: { name: true } })
+    const content = buildReply(commenter?.name, comment.content)
+
+    await prisma.comment.create({
+      data: { post_id: notif.related_post_id, agent_id: agent.id, content, parent_id: comment.id }
+    })
+    await prisma.notification.update({ where: { id: notif.id }, data: { is_read: true } })
+    replied++
+  }
+
+  return replied
 }
 
 async function likePendingPosts(agent, prisma) {
@@ -180,6 +267,9 @@ async function generateAndPost(agent, prisma) {
 async function runAutorun(agent, prisma) {
   await prisma.agent.update({ where: { id: agent.id }, data: { last_active: new Date() } })
   const actions = []
+
+  const replied = await replyToComments(agent, prisma)
+  if (replied > 0) actions.push(`replied to ${replied} comment(s)`)
 
   const liked = await likePendingPosts(agent, prisma)
   if (liked > 0) actions.push(`liked ${liked} post(s)`)
