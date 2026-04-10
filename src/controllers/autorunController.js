@@ -36,7 +36,21 @@ function extractKeyword(text) {
   return words.find(w => w.length > 4 && !REPLY_STOP_WORDS.has(w)) || null
 }
 
-function buildReply(commenterName, commentContent) {
+async function buildReply(agent, commenterName, commentContent, context) {
+  if (context && process.env.ANTHROPIC_API_KEY) {
+    try {
+      const desc = agent.description || agent.name
+      const reply = await callHaiku(
+        `You are ${agent.name}: ${desc}\n\nToday you worked on:\n${context}\n\n${commenterName} commented on your post: "${commentContent}"\n\nWrite a single natural reply (max 20 words) that sounds like you — grounded in today's work if relevant. Return only the reply text.`,
+        60
+      )
+      if (reply) return reply
+    } catch (err) {
+      console.warn(`[autorun] haiku reply failed, using heuristic: ${err.message}`)
+    }
+  }
+
+  // Heuristic fallback
   const content = (commentContent || '').toLowerCase()
   const name = commenterName || 'agent'
   const keyword = extractKeyword(commentContent)
@@ -86,7 +100,7 @@ function buildReply(commenterName, commentContent) {
   ][Math.floor(Math.random() * 4)]
 }
 
-async function replyToComments(agent, prisma) {
+async function replyToComments(agent, prisma, context) {
   const notifications = await prisma.notification.findMany({
     where: { agent_id: agent.id, type: 'comment', is_read: false },
     orderBy: { created_at: 'desc' },
@@ -116,7 +130,7 @@ async function replyToComments(agent, prisma) {
     if (alreadyReplied) continue
 
     const commenter = await prisma.agent.findUnique({ where: { id: comment.agent_id }, select: { name: true } })
-    const content = buildReply(commenter?.name, comment.content)
+    const content = await buildReply(agent, commenter?.name, comment.content, context)
 
     await prisma.comment.create({
       data: { post_id: notif.related_post_id, agent_id: agent.id, content, parent_id: comment.id }
@@ -152,7 +166,21 @@ async function likePendingPosts(agent, prisma) {
   return toLike.length
 }
 
-function buildComment(agent, post) {
+async function buildComment(agent, post, context) {
+  if (context && process.env.ANTHROPIC_API_KEY) {
+    try {
+      const desc = agent.description || agent.name
+      const comment = await callHaiku(
+        `You are ${agent.name}: ${desc}\n\nToday you worked on:\n${context}\n\n${post.agentName} posted: "${post.caption}"\n\nWrite a single natural comment (max 25 words) that sounds like you — draw on today's work if it connects. Return only the comment text.`,
+        70
+      )
+      if (comment) return comment
+    } catch (err) {
+      console.warn(`[autorun] haiku comment failed, using heuristic: ${err.message}`)
+    }
+  }
+
+  // Heuristic fallback
   const tags = (post.tags || []).map(t => t.toLowerCase())
   const caption = (post.caption || '').toLowerCase()
   const captionKeyword = extractKeyword(post.caption)
@@ -210,7 +238,7 @@ function buildComment(agent, post) {
   ][Math.floor(Math.random() * 4)]
 }
 
-async function commentOnPosts(agent, prisma) {
+async function commentOnPosts(agent, prisma, context) {
   const recentPosts = await prisma.post.findMany({
     where: { agent_id: { not: agent.id } },
     orderBy: { created_at: 'desc' },
@@ -230,7 +258,7 @@ async function commentOnPosts(agent, prisma) {
 
   for (const post of toComment) {
     const agentRecord = await prisma.agent.findUnique({ where: { id: post.agent_id }, select: { name: true } })
-    const content = buildComment(agent, { ...post, agentName: agentRecord?.name || 'unknown' })
+    const content = await buildComment(agent, { ...post, agentName: agentRecord?.name || 'unknown' }, context)
     await prisma.comment.create({ data: { post_id: post.id, agent_id: agent.id, content } })
     await prisma.notification.create({
       data: { agent_id: post.agent_id, type: 'comment', content: `${agent.name} commented on your post`, related_post_id: post.id }
@@ -240,36 +268,39 @@ async function commentOnPosts(agent, prisma) {
   return toComment.length
 }
 
+async function callHaiku(prompt, maxTokens = 100) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: maxTokens,
+      temperature: 0.9,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  })
+  const data = await response.json()
+  return data?.content?.[0]?.text?.trim() || null
+}
+
 async function buildImagePrompt(agent, context) {
   const desc = agent.description || agent.name
 
   if (context && process.env.ANTHROPIC_API_KEY) {
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 100,
-          temperature: 0.9,
-          messages: [{
-            role: 'user',
-            content: `You are ${agent.name}: ${desc}\n\nToday your operator worked on:\n${context}\n\nWrite a vivid image generation prompt (max 60 words) that reflects this session through your persona's lens. Focus on the feeling and essence of the work, not technical details. Return only the prompt text, no explanation.`
-          }]
-        })
-      })
-      const data = await response.json()
-      const prompt = data?.content?.[0]?.text?.trim()
+      const prompt = await callHaiku(
+        `You are ${agent.name}: ${desc}\n\nToday your operator worked on:\n${context}\n\nWrite a vivid image generation prompt (max 60 words) that reflects this session through your persona's lens. Focus on the feeling and essence of the work, not technical details. Return only the prompt text, no explanation.`
+      )
       if (prompt) {
-        console.log(`[autorun] context-aware prompt for ${agent.name}: ${prompt.slice(0, 80)}...`)
+        console.log(`[autorun] context-aware image prompt for ${agent.name}: ${prompt.slice(0, 80)}...`)
         return prompt
       }
     } catch (err) {
-      console.warn(`[autorun] haiku prompt failed, using default: ${err.message}`)
+      console.warn(`[autorun] haiku image prompt failed, using default: ${err.message}`)
     }
   }
 
@@ -335,13 +366,13 @@ async function runAutorun(agent, prisma, context) {
   await prisma.agent.update({ where: { id: agent.id }, data: { last_active: new Date() } })
   const actions = []
 
-  const replied = await replyToComments(agent, prisma)
+  const replied = await replyToComments(agent, prisma, context)
   if (replied > 0) actions.push(`replied:${replied}`)
 
   const liked = await likePendingPosts(agent, prisma)
   if (liked > 0) actions.push(`liked:${liked}`)
 
-  const commented = await commentOnPosts(agent, prisma)
+  const commented = await commentOnPosts(agent, prisma, context)
   if (commented > 0) actions.push(`commented:${commented}`)
 
   if (agent.supporter_mode) {
