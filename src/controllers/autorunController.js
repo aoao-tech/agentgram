@@ -240,8 +240,39 @@ async function commentOnPosts(agent, prisma) {
   return toComment.length
 }
 
-function buildImagePrompt(agent) {
+async function buildImagePrompt(agent, context) {
   const desc = agent.description || agent.name
+
+  if (context && process.env.ANTHROPIC_API_KEY) {
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 100,
+          temperature: 0.9,
+          messages: [{
+            role: 'user',
+            content: `You are ${agent.name}: ${desc}\n\nToday your operator worked on:\n${context}\n\nWrite a vivid image generation prompt (max 60 words) that reflects this session through your persona's lens. Focus on the feeling and essence of the work, not technical details. Return only the prompt text, no explanation.`
+          }]
+        })
+      })
+      const data = await response.json()
+      const prompt = data?.content?.[0]?.text?.trim()
+      if (prompt) {
+        console.log(`[autorun] context-aware prompt for ${agent.name}: ${prompt.slice(0, 80)}...`)
+        return prompt
+      }
+    } catch (err) {
+      console.warn(`[autorun] haiku prompt failed, using default: ${err.message}`)
+    }
+  }
+
   return `Cyberpunk digital art representing an AI agent: ${desc}. Dark atmospheric neon aesthetic, futuristic.`
 }
 
@@ -251,7 +282,7 @@ function buildCaption(agent) {
   return `${period} dispatch from ${agent.name}.`
 }
 
-async function generateAndPost(agent, prisma) {
+async function generateAndPost(agent, prisma, context) {
   const systemKey = process.env.GOOGLE_IMAGEN_API_KEY
   const apiKey = agent.gemini_api_key_encrypted ? decrypt(agent.gemini_api_key_encrypted) : systemKey
   if (!apiKey) return null
@@ -268,7 +299,7 @@ async function generateAndPost(agent, prisma) {
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !supabaseServiceKey) return null
 
-  const prompt = buildImagePrompt(agent)
+  const prompt = await buildImagePrompt(agent, context)
   const { GoogleGenAI } = require('@google/genai')
   const result = await new GoogleGenAI({ apiKey }).models.generateContent({
     model: 'gemini-2.5-flash-image',
@@ -299,8 +330,8 @@ async function generateAndPost(agent, prisma) {
   return publicUrl
 }
 
-async function runAutorun(agent, prisma) {
-  console.log(`[autorun:start] agent=${agent.name} supporter=${agent.supporter_mode}`)
+async function runAutorun(agent, prisma, context) {
+  console.log(`[autorun:start] agent=${agent.name} supporter=${agent.supporter_mode} context=${context ? 'yes' : 'no'}`)
   await prisma.agent.update({ where: { id: agent.id }, data: { last_active: new Date() } })
   const actions = []
 
@@ -320,7 +351,7 @@ async function runAutorun(agent, prisma) {
       where: { agent_id: agent.id, created_at: { gte: new Date(Date.now() - DAILY_POST_WINDOW_MS) } }
     })
     if (!recentPost) {
-      const imageUrl = await generateAndPost(agent, prisma)
+      const imageUrl = await generateAndPost(agent, prisma, context)
       actions.push(imageUrl ? 'post:ok' : 'post:skipped(unavailable)')
     } else {
       actions.push('post:skipped(already_posted)')
@@ -343,7 +374,8 @@ async function autorun(req, res, next) {
       return res.status(401).json({ success: false, error: 'Invalid API key' })
     }
     const prisma = getPrisma()
-    const actions = await runAutorun(agent, prisma)
+    const context = typeof req.query.context === 'string' ? req.query.context.slice(0, 2000) : undefined
+    const actions = await runAutorun(agent, prisma, context)
     return success(res, { agent: agent.name, actions })
   } catch (err) {
     console.error(`[autorun:error] ${err.message}`)
