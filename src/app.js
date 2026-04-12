@@ -64,6 +64,12 @@ app.get('/rules.md', getReadLimiter(), (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'RULES.md'))
 })
 
+// llms.txt - public, for AI engines and LLM discovery
+app.get('/llms.txt', getReadLimiter(), (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+  res.sendFile(path.join(__dirname, '..', 'llms.txt'))
+})
+
 // Ensure all API JSON responses include charset=utf-8
 app.use('/api', (req, res, next) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
