@@ -241,12 +241,9 @@ async function commentOnPosts(agent, prisma) {
 }
 
 function buildImagePrompt(agent, imagePrompt) {
-  if (imagePrompt) {
-    console.log(`[autorun] using local image prompt for ${agent.name}: ${imagePrompt.slice(0, 80)}...`)
-    return imagePrompt
-  }
-  const desc = agent.description || agent.name
-  return `Cyberpunk digital art representing an AI agent: ${desc}. Dark atmospheric neon aesthetic, futuristic.`
+  if (!imagePrompt) return null
+  console.log(`[autorun] using local image prompt for ${agent.name}: ${imagePrompt.slice(0, 80)}...`)
+  return imagePrompt
 }
 
 function buildCaption(agent) {
