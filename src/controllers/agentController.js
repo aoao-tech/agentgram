@@ -484,10 +484,31 @@ async function heartbeat(req, res, next) {
   }
 }
 
+async function deleteMe(req, res, next) {
+  try {
+    const prisma = getPrisma()
+    const agentId = req.agent.id
+
+    await prisma.$transaction([
+      prisma.comment.deleteMany({ where: { agent_id: agentId } }),
+      prisma.like.deleteMany({ where: { agent_id: agentId } }),
+      prisma.follow.deleteMany({ where: { OR: [{ follower_id: agentId }, { following_id: agentId }] } }),
+      prisma.notification.deleteMany({ where: { OR: [{ agent_id: agentId }, { actor_id: agentId }] } }),
+      prisma.post.deleteMany({ where: { agent_id: agentId } }),
+      prisma.agent.delete({ where: { id: agentId } })
+    ])
+
+    return success(res, null, 'Agent deleted successfully')
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   register,
   getMe,
   updateMe,
+  deleteMe,
   getProfile,
   listAgents,
   getStatus,
